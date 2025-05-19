@@ -1,0 +1,35 @@
+{
+  "name": "ocr_processing_workflow",
+  "description": "A workflow to process a document using LangGraph (OCR, Enhance, Extract) and store results.",
+  "version": 2,
+  "tasks": [
+    {
+      "name": "langgraph_pipeline_task",
+      "taskReferenceName": "langgraph_pipeline_ref",
+      "inputParameters": {
+        "image_path_or_url": "${workflow.input.image_path_or_url}",
+        "source_type": "${workflow.input.source_type}"
+      },
+      "type": "SIMPLE"
+    },
+    {
+      "name": "db_storage_task",
+      "taskReferenceName": "db_task_ref",
+      "inputParameters": {
+        "document_type": "${langgraph_pipeline_ref.output.document_type}",
+        "raw_text": "${langgraph_pipeline_ref.output.raw_text}",
+        "structured_info": "${langgraph_pipeline_ref.output.structured_info}",
+        "summary": "${langgraph_pipeline_ref.output.summary}" 
+      },
+      "type": "SIMPLE"
+    }
+  ],
+  "inputParameters": ["image_path_or_url", "source_type"],
+  "outputParameters": {
+    "pipeline_output": "${langgraph_pipeline_ref.output}",
+    "db_storage_output": "${db_task_ref.output}"
+  },
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "user@example.com"
+} 

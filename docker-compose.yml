@@ -1,0 +1,102 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama_service
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    tty: true
+    restart: unless-stopped
+
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: postgres_db_service
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: pseguser
+      POSTGRES_PASSWORD: psegpassword
+      POSTGRES_DB: psegdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pseguser -d psegdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: app_worker_service
+    environment:
+      PYTHONUNBUFFERED: 1
+      DATABASE_URL: "postgresql://pseguser:psegpassword@postgres_db_service:5432/psegdb"
+    depends_on:
+      ollama:
+        condition: service_started
+      conductor-server:
+        condition: service_healthy
+      postgres_db:
+        condition: service_healthy
+    volumes:
+      - ./app:/usr/src/app/app
+      - .:/usr/src/app/mounted_project_files
+    restart: unless-stopped
+
+  conductor-server:
+    build:
+      context: ../conductor
+      dockerfile: docker/server/Dockerfile
+    container_name: conductor_server_service
+    environment:
+      CONDUCTOR_DB_TYPE: redis_standalone
+      CONDUCTOR_REDIS_HOSTS: redis:6379:localrack
+      CONDUCTOR_CONFIG_FILE: /app/config/config-mem.properties
+      # QUEUE_TYPE might also be needed depending on how RedisQueueMonitor is configured
+      # e.g. CONDUCTOR_QUEUE_TYPE: redis_standalone or specific Orkes properties
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      - redis # Dependency on Redis
+      - postgres_db # If conductor eventually uses postgres for some things too
+
+  conductor-ui:
+    build:
+      context: ../conductor
+      dockerfile: docker/ui/Dockerfile
+    container_name: conductor_ui_service
+    environment:
+      CONDUCTOR_SERVER_URL: http://conductor-server:8080/api
+    ports:
+      - "5002:5000" # Changed from 5000, then 5001 due to conflicts
+    depends_on:
+      - conductor-server
+    restart: unless-stopped
+
+  redis: # New Redis service
+    image: redis:7-alpine
+    container_name: redis_service
+    ports:
+      - "6380:6379" # For host access/debugging if needed
+    volumes:
+      - redis_data:/data # Persist Redis data
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data: # Volume for Redis persistence
+    driver: local
