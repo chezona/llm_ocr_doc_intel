@@ -1,13 +1,80 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Project specific
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Docker
+.docker/
+
+# Database
+*.sqlite3
+*.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Distribution / packaging
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # C extensions
 *.so
 
 # Distribution / packaging
-.Python
 build/
 dist/
 Downloads/
@@ -70,11 +137,6 @@ docs/_build/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-
-# Environments
-.env
-.venv
-ENV/
 
 # macOS
 .DS_Store
