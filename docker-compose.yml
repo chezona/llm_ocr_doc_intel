@@ -77,7 +77,8 @@ services:
       dockerfile: docker/ui/Dockerfile
     container_name: conductor_ui_service
     environment:
-      CONDUCTOR_SERVER_URL: http://conductor-server:8080/api
+      # CONDUCTOR_SERVER_URL: http://conductor-server:8080/api
+      WF_SERVER: http://conductor-server:8080
     ports:
       - "5002:5000" # Changed from 5000, then 5001 due to conflicts
     depends_on:

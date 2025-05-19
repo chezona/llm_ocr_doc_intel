@@ -112,36 +112,35 @@ def insert_pseg_data(pseg_data: PSEGData, raw_text: str, doc_type: str) -> Optio
         if conn: conn.close()
 
 if __name__ == '__main__':
-    logger.info("Attempting to initialize database (including all schemas)...")
+    """
+    Main execution block for direct script testing.
+
+    When this script is run directly, it attempts to:
+    1. Initialize the database (i.e., create the 'pseg_bills' table if it doesn't exist).
+    2. Optionally, run example PSEG data insertion (currently commented out).
+    """
+    logger.info("Attempting to initialize database (PSEG table)...")
     initialize_database()
     logger.info("Database initialization attempt complete.")
 
-    # Example of inserting PSEG data (as before)
-    # ... (PSEG insertion example can be kept or removed for brevity)
-
-    # Example of inserting dummy Receipt data
-    logger.info("\nAttempting to insert sample Receipt data...")
-    sample_merchant = Merchant(name="Test Cafe", address="123 Test Ave")
-    sample_items = [
-        ReceiptItem(description="Coffee", quantity=1, total_price=Decimal("2.50")),
-        ReceiptItem(description="Muffin", quantity=2, unit_price=Decimal("1.75"), total_price=Decimal("3.50"))
-    ]
-    sample_receipt = Receipt(
-        merchant=sample_merchant,
-        receipt_number="R-001",
-        transaction_date="2024-08-01T10:30:00", # Example ISO datetime string
-        total_amount=Decimal("6.00"),
-        tax_amount=Decimal("0.50"),
-        currency="USD",
-        payment_method="Credit Card",
-        items=sample_items,
-        confidence_score=95,
-        status="PROCESSED",
-        metadata={"source": "test_script"}
-    )
-    
-    inserted_receipt_id = insert_receipt_data(sample_receipt, "Raw OCR text for receipt R-001...", "receipt_test")
-    if inserted_receipt_id:
-        print(f"Successfully inserted sample Receipt data with ID: {inserted_receipt_id}")
-    else:
-        print("Failed to insert sample Receipt data.") 
+    # Example of inserting PSEG data (uncomment and modify to test)
+    # logger.info("\nAttempting to insert sample PSEG data...")
+    # sample_pseg_data = PSEGData(
+    #     account_number="1234567890",
+    #     bill_date="2024-07-27",
+    #     due_date="2024-08-15",
+    #     service_address="100 Main St, Anytown, NJ",
+    #     total_amount_due=Decimal("150.75"),
+    #     previous_balance=Decimal("20.00"),
+    #     payments_received=Decimal("20.00"),
+    #     current_charges=Decimal("150.75")
+    # )
+    # inserted_pseg_id = insert_pseg_data(
+    #     pseg_data=sample_pseg_data, 
+    #     raw_text="Sample raw OCR text for PSEG bill...", 
+    #     doc_type="pseg_bill"
+    # )
+    # if inserted_pseg_id:
+    #     print(f"Successfully inserted sample PSEG data with ID: {inserted_pseg_id}")
+    # else:
+    #     print("Failed to insert sample PSEG data.") 

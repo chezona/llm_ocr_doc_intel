@@ -28,6 +28,19 @@ instructor_litellm_client = instructor.from_litellm(litellm.completion, mode=ins
 
 # Function to get the Ollama model identifier
 def _get_ollama_model_identifier(model_name: str) -> str:
+    """
+    Ensures the Ollama model name is formatted correctly for LiteLLM.
+
+    LiteLLM expects Ollama model names to be prefixed with "ollama/" 
+    (e.g., "ollama/mistral:7b-instruct-q4_K_M"). This function adds the 
+    prefix if it's missing.
+
+    Args:
+        model_name: The raw model name (e.g., "mistral:7b-instruct-q4_K_M").
+
+    Returns:
+        The model name, prefixed with "ollama/" if it wasn't already.
+    """
     if not model_name.startswith("ollama/"):
         return f"ollama/{model_name}"
     return model_name
