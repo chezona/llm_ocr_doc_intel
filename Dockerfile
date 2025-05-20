@@ -1,37 +1,41 @@
-# Use a base image with Python
-FROM python:3.10-slim
+# Use a base image with Python, matching pyproject.toml
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /usr/src/app
 
 # Install system dependencies
-# - Tesseract OCR and its English language pack
-# - OpenCV dependencies (libgl1-mesa-glx can be important)
-# - Other build tools if necessary for some Python packages
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    libtesseract-dev \
+# - poppler-utils for pdf2image
+# - build-essential for some Python packages that might compile C extensions
+# - curl for general utility
+# - postgresql-client (optional, if direct DB operations from container are needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     build-essential \
-    postgresql-client \
-    libgl1-mesa-glx \
+    # postgresql-client \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file and install Python dependencies
-COPY requirements.txt ./
-# It's good practice to upgrade pip first
-RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Poetry
+ENV POETRY_VERSION=1.8.2
+RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
+
+# Copy only files necessary for dependency installation first to leverage Docker cache
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies
+# --no-dev: Do not install development dependencies
+# --no-interaction: Do not ask any interactive questions
+# --no-ansi: Disable ANSI output
+RUN poetry lock --no-update --no-interaction --no-ansi && \
+    poetry install --only main --no-interaction --no-ansi
 
 # Copy the rest of the application code
+# This should come after poetry install to ensure dependencies are cached if only app code changes
 COPY ./app ./app
 
-# Make port 8000 available for an optional FastAPI health check or simple API
-# This is not strictly for the worker but good practice if you add an API endpoint.
-EXPOSE 8000
+# (Optional) Expose a port if your app serves HTTP, e.g., for health checks
+# EXPOSE 8000
 
-# Set the command to run the worker script
-# This assumes your worker script is executable and starts the polling process
-CMD ["python", "-m", "app.worker"] 
+# Set the command to run the Conductor worker
+CMD ["python", "app/main.py"] 

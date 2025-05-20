@@ -20,101 +20,35 @@ Key benefits of this approach:
 """
 from pydantic import BaseModel, Field, RootModel
 from typing import Union, Dict, Any, Optional, List
+import datetime
 
-from app.models import PSEGData # Importing the detailed PSEGData model
+class PSEGLineItem(BaseModel):
+    description: Optional[str] = Field(None, description="Description of the line item charge")
+    amount: Optional[float] = Field(None, description="Amount of the line item charge")
 
-class SimpleClassificationOutput(BaseModel):
-    """
-    A Pydantic model representing the output of a simple document classification task.
-    
-    This model is used by an LLM (via `instructor`) to return the identified type 
-    of a document and an optional confidence score. It's designed for the initial, 
-    coarse-grained classification step in the 2-pass LangGraph architecture.
-    The primary purpose is to quickly determine if a document warrants further, more 
-    specialized processing (e.g., if it's a PSEG bill).
-    """
-    document_type: str = Field(
-        ..., 
-        description="The single most likely classified document type (e.g., 'pseg_bill', 'invoice', 'receipt', 'bank_statement', 'other')."
-    )
-    confidence: Optional[float] = Field(
-        None, 
-        description="An optional confidence score for the classification, ranging from 0.0 (low confidence) to 1.0 (high confidence).", 
-        ge=0.0, 
-        le=1.0
-    )
-    # Rationale for using a simple string for document_type:
-    # While an Enum could be used for predefined types, a string offers flexibility
-    # if the LLM identifies types not explicitly in a predefined list, or if new 
-    # types are to be supported without code changes to an Enum. Validation can occur downstream.
-
-class LLMResponseModel(BaseModel):
-    """
-    A Pydantic model that defines the expected structured output from the LLM 
-    for more detailed data extraction, specifically after a document has been 
-    classified (e.g., as a PSEG bill).
-
-    `instructor` uses this model to parse and validate the LLM's JSON response. 
-    The model is designed to be flexible: if the document is a PSEG bill, 
-    `structured_data` should conform to the `PSEGData` model. If it's classified 
-    as 'other' or a type for which no detailed model exists, `structured_data` 
-    can be a simple dictionary (e.g., containing a note).
-
-    This model structure supports the conditional logic in the 2-pass architecture: 
-    after classification, the system expects either detailed PSEG data or a 
-    more generic output for other document types.
-    """
-    document_type: str = Field(
-        ..., 
-        description="The confirmed or re-classified document type after OCR and initial processing (e.g., 'pseg_bill', 'other'). This might reiterate or refine the type from SimpleClassificationOutput."
-    )
-    # The Union allows for type-specific structured data. For PSEG bills, it expects PSEGData.
-    # For 'other' document types, or if PSEG extraction fails but classification was 'pseg_bill',
-    # it can fall back to a dictionary, which might contain a note or partially extracted fields.
-    # This provides a flexible way to handle varied extraction outcomes.
-    structured_data: Union[PSEGData, Dict[str, Any]] = Field(
-        ..., 
-        description="The structured data extracted from the document. If document_type is 'pseg_bill', this should be PSEGData. For 'other' types, it can be a dictionary, possibly with a 'note' field explaining why detailed extraction was not performed or was not applicable."
-    )
+class PSEGData(BaseModel):
+    account_number: Optional[str] = Field(None, description="PSEG account number")
+    customer_name: Optional[str] = Field(None, description="Customer name")
+    service_address: Optional[str] = Field(None, description="Address where service is provided")
+    billing_address: Optional[str] = Field(None, description="Customer billing address")
+    billing_date: Optional[datetime.date] = Field(None, description="Date the bill was issued (bill_date)")
+    billing_period_start_date: Optional[datetime.date] = Field(None, description="Start date of the billing period")
+    billing_period_end_date: Optional[datetime.date] = Field(None, description="End date of the billing period")
+    due_date: Optional[datetime.date] = Field(None, description="Date the payment is due")
+    total_amount_due: Optional[float] = Field(None, description="Total amount due on the bill")
+    previous_balance: Optional[float] = Field(None, description="Previous balance amount")
+    payments_received: Optional[float] = Field(None, description="Total payments received")
+    current_charges: Optional[float] = Field(None, description="Total current charges")
+    line_items: Optional[List[PSEGLineItem]] = Field(None, description="List of line item charges")
+    raw_text_summary: Optional[str] = Field(None, description="A brief summary of OCRed text for context, if needed")
 
     class Config:
-        """
-        Pydantic model configuration.
-        The `json_schema_extra` with examples can be very useful for `instructor` 
-        as it can pass these examples to the LLM as part of the prompt, 
-        guiding it towards the desired output format (few-shot prompting).
-        This is commented out as it's an optional feature and requires careful crafting
-        of examples that align with the LLM's capabilities and the prompt.
-        """
-        # json_schema_extra = {
-        #     "examples": [
-        #         {
-        #             "document_type": "pseg_bill",
-        #             "structured_data": {
-        #                 # Example fields from PSEGData
-        #                 "account_number": "1234567890",
-        #                 "bill_date": "2023-10-26",
-        #                 "due_date": "2023-11-15",
-        #                 "service_address": "123 Main St, Anytown, NJ 07001",
-        #                 "total_amount_due": 150.75,
-        #                 "customer_name": "John Doe"
-        #             }
-        #         },
-        #         {
-        #             "document_type": "other_invoice",
-        #             "structured_data": {
-        #                 "invoice_id": "INV-2023-001",
-        #                 "vendor_name": "Some Company LLC",
-        #                 "total_amount": 75.20,
-        #                 "note": "Generic invoice processed."
-        #             }
-        #         },
-        #         {
-        #             "document_type": "other",
-        #             "structured_data": {
-        #                 "note": "Document content is unclear or not a supported type for detailed extraction."
-        #             }
-        #         }
-        #     ]
-        # }
-        pass 
+        extra = 'ignore' # Allow model to ignore extra fields from LLM output if any
+
+# Example of another document type model (can be expanded later)
+class GenericInvoiceData(BaseModel):
+    invoice_number: Optional[str] = None
+    vendor_name: Optional[str] = None
+    invoice_date: Optional[datetime.date] = None
+    total_amount: Optional[float] = None
+    raw_text: Optional[str] = None 

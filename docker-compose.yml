@@ -35,6 +35,17 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       DATABASE_URL: "postgresql://pseguser:psegpassword@postgres_db_service:5432/psegdb"
+      # Pass necessary env vars for app/main.py and app/llm_extractor.py
+      CONDUCTOR_SERVER_URL: "http://conductor-server:8080/api"
+      OLLAMA_BASE_URL: "http://ollama:11434" # Using service name 'ollama' from this compose file
+      OLLAMA_EXTRACTOR_MODEL_NAME: "mistral:7b-instruct-q4_K_M" # Or make this configurable from host .env
+      LLM_CONTEXT_MAX_TOKENS: "3000" # Or make this configurable
+      # Add individual PostgreSQL variables if your app/db_utils.py expects them
+      # POSTGRES_USER: "pseguser"
+      # POSTGRES_PASSWORD: "psegpassword"
+      # POSTGRES_DB: "psegdb"
+      # POSTGRES_HOST: "postgres_db_service"
+      # POSTGRES_PORT: "5432"
     depends_on:
       ollama:
         condition: service_started
@@ -43,8 +54,9 @@ services:
       postgres_db:
         condition: service_healthy
     volumes:
-      - ./app:/usr/src/app/app
-      - .:/usr/src/app/mounted_project_files
+      - ./app:/usr/src/app/app # For development: reflects local app code changes in container
+      - ./sample_documents:/usr/src/app/sample_documents # For test documents
+      # - .:/usr/src/app/mounted_project_files # Removed: Too broad. Mount specific data dirs if needed.
     restart: unless-stopped
 
   conductor-server:

@@ -1,35 +1,67 @@
 {
-  "name": "ocr_processing_workflow",
-  "description": "A workflow to process a document using LangGraph (OCR, Enhance, Extract) and store results.",
+  "name": "document_processing_workflow",
+  "description": "Processes a document using Docling, LLM, with Human-in-the-Loop for LLM failures, then stores results.",
   "version": 2,
   "tasks": [
     {
-      "name": "langgraph_pipeline_task",
-      "taskReferenceName": "langgraph_pipeline_ref",
+      "name": "doc_processing_task",
+      "taskReferenceName": "doc_processing_ref",
       "inputParameters": {
-        "image_path_or_url": "${workflow.input.image_path_or_url}",
-        "source_type": "${workflow.input.source_type}"
+        "document_path": "${workflow.input.document_path}",
+        "document_type_hint": "${workflow.input.document_type_hint}"
       },
       "type": "SIMPLE"
     },
     {
-      "name": "db_storage_task",
-      "taskReferenceName": "db_task_ref",
+      "name": "llm_quality_gate_decision",
+      "taskReferenceName": "llm_quality_gate_ref",
       "inputParameters": {
-        "document_type": "${langgraph_pipeline_ref.output.document_type}",
-        "raw_text": "${langgraph_pipeline_ref.output.raw_text}",
-        "structured_info": "${langgraph_pipeline_ref.output.structured_info}",
-        "summary": "${langgraph_pipeline_ref.output.summary}" 
+        "status_doc_processing": "${doc_processing_ref.output.status_doc_processing}"
       },
-      "type": "SIMPLE"
+      "type": "DECISION",
+      "caseValueParam": "status_doc_processing",
+      "decisionCases": {
+        "LLM_SUCCESS": [
+          {
+            "name": "store_document_data_task",
+            "taskReferenceName": "db_store_direct_ref",
+            "inputParameters": {
+              "db_storage_payload": "${doc_processing_ref.output.db_storage_payload}"
+            },
+            "type": "SIMPLE"
+          }
+        ],
+        "LLM_FAILURE": [
+          {
+            "name": "pseg_bill_human_review_task",
+            "taskReferenceName": "human_review_ref",
+            "inputParameters": {
+              "human_review_input": "${doc_processing_ref.output.human_review_input}"
+            },
+            "type": "HUMAN"
+          },
+          {
+            "name": "process_human_corrected_data_task",
+            "taskReferenceName": "db_store_human_corrected_ref",
+            "inputParameters": {
+              "corrected_pseg_data_dict": "${human_review_ref.output.corrected_pseg_data_dict}",
+              "full_ocr_text": "${doc_processing_ref.output.human_review_input.full_ocr_text}",
+              "document_type_hint": "${doc_processing_ref.output.human_review_input.document_type_hint}"
+            },
+            "type": "SIMPLE"
+          }
+        ]
+      },
+      "defaultCase": []
     }
   ],
-  "inputParameters": ["image_path_or_url", "source_type"],
+  "inputParameters": ["document_path", "document_type_hint"],
   "outputParameters": {
-    "pipeline_output": "${langgraph_pipeline_ref.output}",
-    "db_storage_output": "${db_task_ref.output}"
+    "direct_storage_output": "${db_store_direct_ref.output}",
+    "human_corrected_storage_output": "${db_store_human_corrected_ref.output}",
+    "final_status_doc_processing": "${doc_processing_ref.output.status_doc_processing}"
   },
   "schemaVersion": 2,
   "restartable": true,
-  "ownerEmail": "user@example.com"
+  "ownerEmail": "frank@example.com"
 } 
