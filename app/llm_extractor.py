@@ -4,7 +4,8 @@ import logging
 import os
 from typing import Optional
 
-from docling_core.datamodel.docling_document_datamodel import DoclingDocument
+# Removed DoclingDocument import as it's no longer used by the active extraction path
+# from docling_core.datamodel.docling_document_datamodel import DoclingDocument
 from app.llm_response_models import PSEGData
 from app.config import settings
 
@@ -43,71 +44,34 @@ except Exception as e:
 # Patch litellm to work with instructor for Ollama, using settings
 client = instructor.patch(litellm.LiteLLM(base_url=str(settings.ollama_base_url)), mode=instructor.Mode.JSON_SCHEMA)
 
-def _get_text_from_docling_doc_with_token_limit(docling_doc: DoclingDocument) -> str:
+# Removed _get_markdown_from_docling_doc function as it was specific to DoclingDocument input
+# def _get_markdown_from_docling_doc(docling_doc: DoclingDocument) -> str:
+#     ...
+
+def extract_pseg_data_from_markdown(markdown_content: str, document_source_info: str = "Markdown content") -> Optional[PSEGData]:
     """
-    Constructs a single string from DoclingDocument text blocks, respecting a token limit from settings.
-    """
-    context_parts = []
-    current_token_count = 0
-
-    if not _tokenizer: # Fallback to character limit if tokenizer failed to load
-        logger.warning("Tokenizer not available, falling back to character limit for context preparation.")
-        char_limit = settings.llm_context_max_tokens * 4 
-        full_text_char_based = "\n".join([block.text for page in docling_doc.pages for block in page.blocks if block.text])
-        if len(full_text_char_based) > char_limit:
-            logger.info(f"Character-based context length ({len(full_text_char_based)}) > {char_limit}. Truncating.")
-            return full_text_char_based[:char_limit]
-        return full_text_char_based
-
-    # Token-based context assembly
-    for page_idx, page in enumerate(docling_doc.pages):
-        for block_idx, block in enumerate(page.blocks):
-            if block.text and block.text.strip():
-                block_token_ids = _tokenizer.encode(block.text, add_special_tokens=False)
-                if current_token_count + len(block_token_ids) <= settings.llm_context_max_tokens:
-                    context_parts.append(block.text)
-                    current_token_count += len(block_token_ids)
-                else:
-                    logger.info(
-                        f"Token limit ({settings.llm_context_max_tokens}) reached for LLM context. "
-                        f"Stopped at page {page_idx + 1}, block {block_idx + 1}. "
-                        f"Total tokens collected: {current_token_count}."
-                    )
-                    return "\n".join(context_parts)
-    
-    logger.info(f"Full document context prepared with approximately {current_token_count} tokens.")
-    return "\n".join(context_parts)
-
-
-def extract_pseg_data(docling_doc: DoclingDocument) -> Optional[PSEGData]:
-    """
-    Extracts structured data from a PSEG DoclingDocument using an LLM, configured via settings.
+    Extracts structured PSEG data from Markdown text using an LLM.
 
     Args:
-        docling_doc: The DoclingDocument object from docling parsing.
+        markdown_content: The Markdown content string.
+        document_source_info: A string indicating the source of the markdown (e.g., file path, originating parser type).
 
     Returns:
         A PSEGData object if extraction is successful, None otherwise.
     """
-    if not docling_doc.pages:
-        logger.warning("Cannot extract PSEG data: DoclingDocument has no pages.")
-        return None
-
-    full_text_context = _get_text_from_docling_doc_with_token_limit(docling_doc)
-    
-    if not full_text_context.strip():
-        logger.warning("Cannot extract PSEG data: No text content found in DoclingDocument blocks after context preparation.")
+    if not markdown_content.strip():
+        logger.warning(f"Cannot extract PSEG data: Markdown content from '{document_source_info}' is empty.")
         return None
 
     prompt = f"""
-    Given the following text extracted from a PSEG utility bill, please extract the requested information.
+    Given the following Markdown text extracted from a PSEG utility bill, please extract the requested information.
     The text may be truncated if the original document was too long.
     Focus on extracting information relevant to a PSEG bill.
     Respond ONLY with the JSON object adhering to the PSEGData schema.
 
-    Document Text:
+    Document Text (Markdown):
     ---BEGIN DOCUMENT TEXT---
-    {full_text_context}
+    {markdown_content}
     ---END DOCUMENT TEXT---
 
     Extract the following fields: account_number, customer_name, service_address, billing_address, billing_date (which might be labeled as 'bill_date'), billing_period_start_date, billing_period_end_date, due_date, total_amount_due, previous_balance, payments_received, current_charges, and any line_items (each with description and amount).
@@ -115,19 +79,25 @@ def extract_pseg_data(docling_doc: DoclingDocument) -> Optional[PSEGData]:
     """
 
     try:
-        logger.info(f"Attempting PSEG data extraction with model: {settings.ollama_extractor_model_name} using context of approx. {_tokenizer.encode(full_text_context, add_special_tokens=False).__len__() if _tokenizer else len(full_text_context)} {'tokens' if _tokenizer else 'characters'}.")
+        context_length_info = f"{_tokenizer.encode(markdown_content, add_special_tokens=False).__len__()} tokens" if _tokenizer else f"{len(markdown_content)} characters"
+        logger.info(f"Attempting PSEG data extraction from '{document_source_info}' with model: {settings.ollama_extractor_model_name} using Markdown context of approx. {context_length_info}.")
+        
         response = client.chat.completions.create(
             model=settings.ollama_extractor_model_name,
             response_model=PSEGData,
             messages=[
-                {"role": "system", "content": "You are an expert PSEG bill data extraction AI. Your output must be a valid JSON object matching the PSEGData schema. Dates should be YYYY-MM-DD."},
+                {"role": "system", "content": "You are an expert PSEG bill data extraction AI. Your output must be a valid JSON object matching the PSEGData schema. Dates should be YYYY-MM-DD. The input document text is in Markdown format."},
                 {"role": "user", "content": prompt}
             ],
-            max_retries=2, 
+            max_retries=settings.llm_max_retries, 
             timeout=settings.ollama_request_timeout
         )
-        logger.info("Successfully extracted PSEG data.")
+        logger.info(f"Successfully extracted PSEG data from '{document_source_info}'.")
         return response
     except Exception as e:
-        logger.error(f"LLM extraction failed for PSEG data: {e}", exc_info=True)
-        return None 
+        logger.error(f"LLM extraction failed for PSEG data from '{document_source_info}': {e}", exc_info=True)
+        return None
+
+# Removed extract_pseg_data_with_docling_input function as it's no longer part of the active LlamaParse-only path
+# def extract_pseg_data_with_docling_input(docling_doc: DoclingDocument, original_file_path: Optional[str] = None) -> Optional[PSEGData]:
+#     ... 

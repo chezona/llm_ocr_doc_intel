@@ -17,7 +17,7 @@ from typing import Optional # Keep Optional if we add optional fields later
 # Third-party imports
 # from dotenv import load_dotenv # No longer needed, pydantic-settings handles .env
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import HttpUrl # For URL validation
+from pydantic import HttpUrl, Field # For URL validation and Field for optional fields
 
 class AppSettings(BaseSettings):
     """
@@ -58,6 +58,13 @@ class AppSettings(BaseSettings):
     # Moved here for centralized configuration
     llm_context_max_tokens: int = 3000
     """Token limit for the context sent to LLM, leaving room for prompt and response schema."""
+
+    llm_max_retries: int = 2
+    """Number of retries for LLM calls when using instructor for extraction."""
+
+    # --- Parser Configuration ---
+    llama_cloud_api_key: Optional[str] = Field(None, description="API key for LlamaParse (LlamaCloud). Get from https://cloud.llamaindex.ai/api-key")
+    # document_parser_type: str = Field("docling", description="Document parser to use ('docling' or 'llamaparse').") # Removed as LlamaParse is now the default
 
     model_config = SettingsConfigDict(
         env_file = ".env",          # Load .env file

@@ -1,0 +1,51 @@
+# Core FastAPI and Uvicorn
+fastapi>=0.115.0
+uvicorn[standard]>=0.23.0
+
+# Pydantic for data validation and settings
+pydantic>=2.5.0
+pydantic-settings>=2.2.0
+
+# LLM Interaction
+litellm>=1.34.0
+instructor>=1.2.0
+openai>=1.12.0 # Often a peer dependency for instructor/litellm or for type hints
+
+# LlamaParse and LlamaIndex
+llama-parse>=0.6.23 
+llama-index-core>=0.12.0
+
+# Database
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+
+# Conductor
+# conductor-python was in pyproject.toml, assuming it is conductor-client or similar
+# If conductor-python is a specific library, adjust as needed.
+# Using a common name, replace if incorrect from prior setup.
+conductor-python>=1.0 # Corrected based on pyproject.toml
+
+# HTTP and Utilities
+requests>=2.31.0
+httpx>=0.27.0
+python-dotenv>=1.0.0
+tenacity>=8.2.0 
+coloredlogs>=15.0 
+
+# Tokenizer for LLM context logging (used in llm_extractor.py)
+transformers>=4.38.0
+sentencepiece>=0.1.99 
+numpy>=1.26.0
+
+# Removed (related to docling or heavy vision tasks not essential for LlamaParse path):
+# ollama (direct ollama lib, litellm handles communication)
+# pytesseract
+# pillow
+# pdf2image
+# opencv-python-headless
+# torch
+# torchvision
+# torchaudio
+# docling (or docling-core)
+# streamlit and streamlit-pydantic (UI, not core worker)
+# watchdog (file system monitoring, not core worker) 

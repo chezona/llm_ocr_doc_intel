@@ -3,15 +3,15 @@
 ## 1. Introduction and Goals
 
 This project implements a robust, containerized pipeline for advanced intelligent document processing. It leverages:
-*   **`docling` library:** For comprehensive document parsing, OCR, and structural analysis.
+*   **`LlamaParse` library:** For converting documents (e.g., PDFs) to Markdown format.
 *   **Large Language Models (LLMs):** For extracting structured information, guided by `instructor`.
 *   **Netflix Conductor:** For orchestrating the overall workflow, including a Human-in-the-Loop (HITL) step for LLM extraction failures.
-*   **Poetry:** For dependency management.
+*   **pip and `requirements.txt`:** For dependency management.
 
 The workflow processes documents (initially PSEG utility bills) as follows:
 1.  **Document Processing Task (`doc_processing_task`):**
-    *   Parses the input document using `docling` (`app.docling_processor.py`).
-    *   Attempts to extract structured data (e.g., `PSEGData` model) using an LLM (`app.llm_extractor.py`).
+    *   Parses the input document using `LlamaParse` (`app.llama_parser_processor.py`) to get Markdown.
+    *   Attempts to extract structured data (e.g., `PSEGData` model) from the Markdown using an LLM (`app.llm_extractor.py`).
     *   Outputs processing status (`LLM_SUCCESS` or `LLM_FAILURE`) and relevant data for the next step.
 2.  **LLM Quality Gate (DECISION Task):**
     *   If LLM extraction was successful, routes to direct database storage.
@@ -37,11 +37,15 @@ The system is managed with Docker and Docker Compose.
 
 *   **Core Pipeline Functional:** The end-to-end pipeline including HITL for LLM failures is implemented.
 *   **Initial Focus: PSEG Utility Bills:** System tuned for PSEG bills.
-*   **`docling` Integration:** `docling[vlm]` for parsing and OCR.
+*   **`LlamaParse` Integration:** `LlamaParse` is used for PDF to Markdown conversion.
+*   **`docling` Suspended:** The `docling` based parsing path is currently suspended to simplify dependencies. The code remains in the repository for potential future use.
 *   **LLM Configuration:** Uses Ollama-served models, `instructor`, and `litellm`.
-*   **HITL for LLM Extraction:** If `extract_pseg_data` fails (returns `None`), workflow routes to a HUMAN task in Conductor. Human provides corrected JSON via Conductor UI.
+*   **HITL for LLM Extraction:** If `extract_pseg_data_from_markdown` fails (returns `None`), workflow routes to a HUMAN task in Conductor. Human provides corrected JSON via Conductor UI.
 *   **Configuration:** Centralized in `app/config.py` (Pydantic `BaseSettings`).
-*   **Dependency Management:** Poetry (`pyproject.toml`).
+*   **Dependency Management:** pip and `requirements.txt`.
+
+### Document Parsing
+The system now primarily uses **`LlamaParse`** for converting input files (e.g., PDFs) into Markdown suitable for LLM processing. The `docling` parser integration is currently suspended.
 
 ## 3. System Architecture
 
@@ -64,9 +68,9 @@ graph TD
     subgraph AppWorkerServiceContext ["App Worker: doc_processing_task Execution"]
         direction LR
         AppWorkerService -.-> DPTask["doc_processing_task <br/> (app.conductor_workers.process_document_task)"];
-        DPTask -- "Input: document_path, <br/> document_type_hint" --> DoclingProc["app.docling_processor.parse_document_with_docling"];
-        DoclingProc -- "Output: DoclingDocument" --> LLMExtractor["app.llm_extractor.extract_pseg_data"];
-        LLMExtractor -- "Output: Optional[PSEGData]" --> DPTask;
+        DPTask -- "Input: document_path, <br/> document_type_hint" --> ParserLogic["Document Parser <br/> (LlamaParse)"];
+        ParserLogic -- "Output: Markdown Text" --> LLMExtractorWrapper["LLM Extraction Logic <br/> (app.llm_extractor)"];
+        LLMExtractorWrapper -- "Output: Optional[PSEGData]" --> DPTask;
         DPTask -- "Output: <br/> status_doc_processing, <br/> db_storage_payload OR human_review_input" --> Workflow;
     end
 
@@ -83,7 +87,7 @@ graph TD
 
     LLMQualityGate -- "LLM_FAILURE" --> HumanReviewTask["pseg_bill_human_review_task <br/> (HUMAN Task)"];
     subgraph HumanReviewContext ["Human Review via Conductor UI/API"]
-        HumanReviewTask -- "Input: human_review_input <br/> (full_ocr_text, original_doc_path, etc.)" --> Human["Human Reviewer <br/> (Uses Conductor UI)"];
+        HumanReviewTask -- "Input: human_review_input <br/> (markdown_text, original_doc_path, etc.)" --> Human["Human Reviewer <br/> (Uses Conductor UI)"];
         Human -- "Provides output JSON: <br/> { corrected_pseg_data_dict: { ... } }" --> HumanReviewTask;
         HumanReviewTask -- "Output: corrected_pseg_data_dict" --> Workflow;
     end
@@ -92,26 +96,23 @@ graph TD
     subgraph AppWorkerDBHumanContext ["App Worker: process_human_corrected_data_task Execution"]
         direction LR
         AppWorkerService -.-> ProcessHumanDataTask["process_human_corrected_data_task <br/> (app.conductor_workers.process_human_corrected_data_task)"];
-        ProcessHumanDataTask -- "Input: corrected_pseg_data_dict, <br/> full_ocr_text, document_type_hint" --> DBUtilsHuman["app.db_utils.insert_pseg_data"];
+        ProcessHumanDataTask -- "Input: corrected_pseg_data_dict, <br/> markdown_text, document_type_hint" --> DBUtilsHuman["app.db_utils.insert_pseg_data"];
         DBUtilsHuman -- "Stores data" --> PGSQLServiceDB;
         ProcessHumanDataTask -- "Output: db_human_corrected_output" --> Workflow;
     end
 
-    %% Common elements referenced earlier in the original diagram
-    DoclingProc -- "Uses" --> DoclingLib["Docling Library"];
-    LLMExtractor -- "Uses" --> LiteLLMLib["LiteLLM Library"];
+    LLMExtractorWrapper -- "Uses" --> LiteLLMLib["LiteLLM Library"];
     LiteLLMLib -- "Communicates with" --> OllamaService["Ollama Service (LLMs)"];
-    LLMExtractor -- "Uses" --> InstructorLib["Instructor Library"];
-    LLMExtractor -- "Uses Pydantic Model" --> PSEGDataModel["PSEGData <br/> (app.llm_response_models)"];
+    LLMExtractorWrapper -- "Uses" --> InstructorLib["Instructor Library"];
+    LLMExtractorWrapper -- "Uses Pydantic Model" --> PSEGDataModel["PSEGData <br/> (app.llm_response_models)"];
     
     subgraph SettingsAndConfigRef ["Shared Configuration"]
       PydanticSettings["app.config.settings"]
     end
-    DPTask -- "Reads config" --> PydanticSettings;
-    LLMExtractor -- "Reads config" --> PydanticSettings;
+    DPTask -- "Reads config (implicitly for LlamaParse API key)" --> PydanticSettings;
+    LLMExtractorWrapper -- "Reads config" --> PydanticSettings;
     DBUtilsDirect -- "Reads config (for DB URL)" --> PydanticSettings;
     DBUtilsHuman -- "Reads config (for DB URL)" --> PydanticSettings;
-
 
     classDef default fill:#fff,stroke:#333,stroke-width:2px,color:#333;
     classDef userInput fill:#f9f,stroke:#333,stroke-width:2px;
@@ -123,13 +124,12 @@ graph TD
     classDef pydantic fill:#ffcc99,stroke:#333,stroke-width:1.5px;
     classDef human fill:#ffebcc,stroke:#333,stroke-width:2px;
 
-
     class UserInput userInput;
     class CW_API,CS,CUI,Workflow,LLMQualityGate,HumanReviewTask conductor;
     class AppWorkerService,DPTask,DBStoreTask,ProcessHumanDataTask appWorker;
     class PGSQLServiceDB database;
     class OllamaService services;
-    class DoclingLib,DoclingCoreLib,LiteLLMLib,InstructorLib extLib;
+    class LiteLLMLib,InstructorLib extLib; /* Removed DoclingLib */
     class PSEGDataModel,PydanticSettings pydantic;
     class Human human;
 ```
@@ -139,10 +139,10 @@ graph TD
 *   **User Input:** Documents submitted via cURL.
 *   **Netflix Conductor:** Orchestrates `document_processing_workflow` (v2) from `ocr_processing_workflow.json`.
     *   **`doc_processing_task`**:
-        *   Calls `docling` and then LLM extraction.
+        *   Calls `LlamaParse` and then LLM extraction.
         *   Outputs `status_doc_processing` ("LLM_SUCCESS" or "LLM_FAILURE").
         *   If "LLM_SUCCESS", outputs `db_storage_payload`.
-        *   If "LLM_FAILURE", outputs `human_review_input` (containing `full_ocr_text`, `original_document_path`, `document_type_hint`).
+        *   If "LLM_FAILURE", outputs `human_review_input` (containing `markdown_text`, `original_document_path`, `document_type_hint`).
     *   **`llm_quality_gate_decision` (DECISION Task):**
         *   Routes to `store_document_data_task` if `status_doc_processing` is "LLM_SUCCESS".
         *   Routes to `pseg_bill_human_review_task` if `status_doc_processing` is "LLM_FAILURE".
@@ -165,111 +165,92 @@ graph TD
 
 ## 4. Key Modules (`app/` directory)
 
-*   **`main.py`**: Entry point for Conductor workers. Initializes DB and `TaskHandler` (now registers `process_human_corrected_data_task` as well).
+*   **`main.py`**: Entry point for Conductor workers. Initializes DB and `TaskHandler`.
 *   **`conductor_workers.py`**:
-    *   `process_document_task`: Performs docling and LLM extraction, outputs status for HITL routing.
+    *   `process_document_task`: Performs LlamaParse PDF to Markdown conversion and then LLM extraction from Markdown.
     *   `store_document_data_task`: Stores data from successful LLM extractions.
-    *   `process_human_corrected_data_task`: New task to process and store human-corrected data.
-*   **`docling_processor.py`**: No changes.
-*   **`llm_extractor.py`**: No changes (failure to extract `None` is the trigger).
+    *   `process_human_corrected_data_task`: Processes and store human-corrected data.
+*   **`docling_processor.py`**: Handles document parsing (Currently Suspended). Code remains for potential future use.
+*   **`llama_parser_processor.py`**: Handles document parsing using LlamaParse.
+*   **`llm_extractor.py`**: Works with Markdown input for LLM extraction. (Docling-specific input conversion removed).
 *   **`llm_response_models.py`**: No changes.
-*   **`config.py`**: No changes.
-*   **`db_utils.py`**: No changes (used by both direct and human-corrected storage paths).
+*   **`config.py`**: `DOCUMENT_PARSER_TYPE` setting removed (or effectively hardcoded to LlamaParse). `LLAMA_CLOUD_API_KEY` is used.
+*   **`db_utils.py`**: The `raw_ocr_text` column will now store Markdown content from LlamaParse.
 
 ## 5. Technologies Used
-*(No change to this section)*
+*   Python 3.11+
+*   pip and `requirements.txt` for dependency management
+*   Docker & Docker Compose
+*   Netflix Conductor (orchestration)
+*   Ollama (local LLM serving)
+*   LiteLLM (LLM provider interface)
+*   Instructor (structured LLM output)
+*   Pydantic (data validation and settings)
+*   **LlamaParse & LlamaIndex-core** (document PDF to Markdown conversion)
+*   PostgreSQL (database)
+*   Loguru (logging - if you choose to integrate it more deeply, currently standard logging)
+*   Transformers & SentencePiece (for token counting in LLM input)
+*   (Docling library is present in code but suspended from active use)
 
-## 6. Project Setup and Execution Plan
+## 6. Setup and Running
 
-This section outlines the steps from initial setup to running the full workflow with HITL.
+### 6.1. Prerequisites
+*   Docker and Docker Compose installed.
+*   Python 3.11+ (for local development if not using Docker for everything).
+*   Access to an Ollama instance (local or remote) and a LlamaParse API key.
 
-### Phase 0: Migration to Poetry & Initial Setup
-*(No change to this section)*
+### 6.2. Configuration
+1.  **Create `.env` file:**
+    Copy `.env.example` (if it exists) to `.env` or create a new `.env` file in the project root.
+    Populate it with necessary values:
+    ```env
+    # Ollama settings
+    OLLAMA_BASE_URL=http://ollama:11434 # Or your Ollama instance URL
+    OLLAMA_EXTRACTOR_MODEL_NAME=mistral:7b-instruct-q4_K_M # Or your preferred model
 
-### Phase 1: Core Application Logic Implementation (Docling, LLM, Conductor Workers, DB, HITL Core)
+    # Database settings
+    DATABASE_URL=postgresql://pseguser:psegpassword@postgres_db_service:5432/psegdb
 
-*   **Done:** All original tasks.
-*   **Done:** `ocr_processing_workflow.json` (v2) updated for HITL decision logic, including a HUMAN task.
-*   **Done:** `app/conductor_workers.py` updated:
-    *   `process_document_task` now outputs `status_doc_processing` and conditional payloads.
-    *   Added `process_human_corrected_data_task`.
-*   **Done:** `app/main.py` registers the new `process_human_corrected_data_task`.
+    # Conductor settings
+    CONDUCTOR_BASE_URL=http://conductor-server:8080/api
 
-### Phase 2: System Integration, Testing (including HITL), and Refinement
+    # LlamaParse API Key (REQUIRED)
+    LLAMA_CLOUD_API_KEY="your_llama_parse_api_key_here"
+    ```
+2.  **Review `app/config.py`:** For default values and other settings.
 
-*   **Current:** Docker image build is ongoing/completed.
-*   **Next:**
-    1.  **Verify Docker Services:** Use `docker-compose ps`. Ensure `app_worker`, `conductor-server`, `conductor-ui`, `ollama`, `postgres_db_service` are running.
-    2.  **Register Workflow with Conductor:**
-        *   Access Conductor UI (`http://localhost:5002`).
-        *   Register `ocr_processing_workflow.json` (v2). **Ensure any previous version is updated or replaced.**
-        *   **(Note:** Before running the cURL commands below, create a directory named `sample_documents` in your project root (next to `app/`, `Dockerfile`, etc.) and place your test PDF files (e.g., `your_GOOD_sample_pseg_bill.pdf`, `your_BAD_sample_or_corrupt.pdf`) inside it.)
-    3.  **Test Workflow Execution (Happy Path - LLM Success):**
-        *   Trigger the `document_processing_workflow` with a document you expect the LLM to process successfully.
-        ```bash
-            # (Same cURL as before)
-            curl -X POST \
-              http://localhost:8080/api/workflow/document_processing_workflow \
-              -H 'Content-Type: application/json' \
-              -d '{
-                "document_path": "/usr/src/app/sample_documents/your_GOOD_sample_pseg_bill.pdf",
-                "document_type_hint": "PSEG_BILL" 
-              }'
-            ```
-        *   Monitor in Conductor UI: Should go through `doc_processing_task` -> `llm_quality_gate_decision` (LLM_SUCCESS branch) -> `store_document_data_task`.
-        *   Verify data in PostgreSQL.
-    4.  **Test Workflow Execution (HITL Path - LLM Failure):**
-        *   To simulate LLM failure for testing:
-            *   **Option A (Code Change):** Temporarily modify `app.llm_extractor.extract_pseg_data` to sometimes (or always) return `None`. Rebuild the `app_worker` image.
-            *   **Option B (Difficult Input):** Provide a document that is very different from a PSEG bill, or a corrupted PDF, hoping the LLM fails to extract `PSEGData`.
-        *   Trigger the workflow:
-        ```bash
-            curl -X POST \
-              http://localhost:8080/api/workflow/document_processing_workflow \
-              -H 'Content-Type: application/json' \
-              -d '{
-                "document_path": "/usr/src/app/sample_documents/your_BAD_sample_or_corrupt.pdf",
-                "document_type_hint": "PSEG_BILL_FOR_FAILURE_TEST"
-              }'
-            ```
-        *   Monitor in Conductor UI:
-            *   `doc_processing_task` should complete, outputting `status_doc_processing: "LLM_FAILURE"`.
-            *   `llm_quality_gate_decision` should route to the `LLM_FAILURE` branch.
-            *   The workflow should pause at `pseg_bill_human_review_task` (state: `IN_PROGRESS`).
-        *   **Perform Human Review via Conductor UI:**
-            *   Go to the paused workflow instance in Conductor UI.
-            *   Find the `pseg_bill_human_review_task`.
-            *   View its "Input" tab. You should see `human_review_input` (containing `full_ocr_text`, `original_document_path`, `document_type_hint`).
-            *   Use this information to manually construct a valid JSON for `PSEGData`.
-            *   Go to the "Actions" tab for the HUMAN task and select "Update Task".
-            *   In the "Output Data" field, paste your JSON in the required format:
-                ```json
-                {
-                  "corrected_pseg_data_dict": {
-                    "account_number": "MANUAL123",
-                    "customer_name": "Manual Entry",
-                    "service_address": "123 Human Ln",
-                    "billing_address": "PO Box HITL",
-                    "billing_date": "2023-01-15",
-                    "billing_period_start_date": "2023-01-01",
-                    "billing_period_end_date": "2023-01-31",
-                    "due_date": "2023-02-01",
-                    "total_amount_due": 100.00,
-                    "previous_balance": 0.0,
-                    "payments_received": 0.0,
-                    "current_charges": 100.0,
-                    "line_items": [{"description": "Manual charge", "amount": 100.00}],
-                    "raw_text_summary": "Manually reviewed and entered."
-                  }
-                }
-                ```
-            *   Click "Update". The HUMAN task should complete.
-        *   The workflow should then proceed to `process_human_corrected_data_task`.
-        *   Verify logs for this task and check that data is stored in PostgreSQL.
-    5.  **Refine Prompts and Error Handling:** Based on test results.
+### 6.3. Building and Running with Docker Compose
 
-### Phase 3: Extending to Other Document Types (Future)
-*(No change to this section for now, but HITL makes this more robust)*
+1.  **Build the services:**
+    ```bash
+    docker-compose build
+    ```
+2.  **Start the services:**
+    ```bash
+    docker-compose up -d
+    ```
+    This will start the `app_worker`, `conductor-server`, `postgres_db_service`, and `ollama` (if configured in compose).
+
+### 6.4. Local Development (without full Docker build for app_worker)
+
+If you want to run `app_worker` locally (e.g., for faster debugging of Python code) while other services (Conductor, DB, Ollama) run in Docker:
+
+1.  **Ensure services are up:** `docker-compose up -d conductor-server postgres_db_service ollama` (or whichever backing services you need).
+2.  **Install dependencies locally:**
+    Create and activate a virtual environment:
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+    ```
+    Install requirements:
+    ```bash
+    pip install -r requirements.txt
+    ```
+3.  **Set Environment Variables:** Ensure your local terminal session has the environment variables defined in your `.env` file (e.g., by using `python-dotenv` in your script or sourcing the `.env` file if your shell supports it, or manually setting them).
+4.  **Run the application:**
+    ```bash
+    python app/main.py
+    ```
 
 ## 7. How to Run
 ### Prerequisites
